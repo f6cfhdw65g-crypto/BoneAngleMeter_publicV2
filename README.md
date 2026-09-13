@@ -5,7 +5,7 @@
 > [CHANGELOG.md](CHANGELOG.md) for full details. The original description and
 > credit below remain accurate for the base project.
 
-This repository contains the code developed during Juliette Burg Personnaz' dissertation at *CTK, LMU Munich* and adapted my Matthias frank. 
+This repository contains the code developed during Juliette Burg Personnaz' dissertation at *CTK, LMU Munich* and adapted my Matthias Frank. 
 This 3D-Slicer plugin can be used to measure bone-angles in CT-images. The currently supported measurements are only valid for the canine hind-limbs.
  Changes include: new measurements (aLDFA, Tibial Metatarsal Angle), manual sphere-fit placement for the femoral head/condyles, color-coded 3D visualization of fitted spheres and measurement axes, a single embedded sidebar panel replacing the old pop-up windows, and several bug fixes (landmark duplication, a drag-induced freeze, and sign errors in the varus/valgus calculations). 
 
