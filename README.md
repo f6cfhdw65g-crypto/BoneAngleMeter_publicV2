@@ -17,7 +17,7 @@ This 3D-Slicer plugin can be used to measure bone-angles in CT-images. The curre
     <img src="doc/choose_module.png" alt="Choose Module" style="width: 500px"/>
 
 3.	Select the button "Apply" to generate the 3D bone model from the CT scan. The threshold can be adapted by changing the **Lower threshold** and **Upper threshold** values and reselecting "Apply". The **Surface smoothing** and **3D Opacity** sliders adjust the appearance of the model — lowering the opacity is useful for seeing landmarks placed inside the bone.
-  <img src="doc/Generate3Dmodel.png" alt="Generate 3D modle" style="width: 500px"/>
+    <img src="doc/Generate3Dmodel.png" alt="Generate 3D modle" style="width: 500px"/>
   
 4.	Open the **Measurements** section in the sidebar (click its header to expand it), and use the **Side** dropdown to choose the left or right hind limb.
    
