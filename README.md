@@ -17,7 +17,7 @@ This 3D-Slicer plugin can be used to measure bone-angles in CT-images. The curre
    <img src="doc/choose_module.png" alt="Choose Module" style="width: 500px"/>
 
 3.	Select the button "Apply" to generate the 3D bone model from the CT scan. The threshold can be adapted by changing the **Lower threshold** and **Upper threshold** values and reselecting "Apply". The **Surface smoothing** and **3D Opacity** sliders adjust the appearance of the model — lowering the opacity is useful for seeing landmarks placed inside the bone.
-   <img src="doc/Generate3Dmodel.png" alt="Generate 3D modle" style="width: 500px"/>
+	<img src="doc/Generate3Dmodel.png" alt="Generate 3D modle" style="width: 500px"/>
   
 4.	Open the **Measurements** section in the sidebar (click its header to expand it), and use the **Side** dropdown to choose the left or right hind limb.
    
@@ -25,10 +25,12 @@ This 3D-Slicer plugin can be used to measure bone-angles in CT-images. The curre
 	
 6.	Choose the first landmark. A description and reference image show how to set the point (click the image to view it enlarged). Set the point on one of the CT image windows or the 3D view. If you're not satisfied with a placed point, click again to move it, or select "Delete" to remove just that landmark and place it again from scratch. For the femoral head and condyles, place the center point and then adjust the **Sphere radius** field until the displayed sphere matches the bone surface.
 
-8.	Use "Show fitted spheres", "Show axis lines", and "Show landmark labels" to toggle what's shown in the 3D view while you work.
-9.	Once every landmark for the measurement is placed, the angle value and its interpretation (e.g. Varus/Valgus, Outward/Inward rotation) appear in green, along with the compared axes.
-10.	To save the landmarks, select "Export"; to save the measurement results, select "Export Results" — both at the bottom of the panel.
-11.	To rework the same landmarks later, select "Import" and choose the saved CSV file. "Delete All" clears every landmark for the current side.
+	<img src="doc/setlandmarks.png" alt="Set landmarks" style="width: 500px"/>
+
+7.	Use "Show fitted spheres", "Show axis lines", and "Show landmark labels" to toggle what's shown in the 3D view while you work.
+8.	Once every landmark for the measurement is placed, the angle value and its interpretation (e.g. Varus/Valgus, Outward/Inward rotation) appear in green, along with the compared axes.
+9.	To save the landmarks, select "Export"; to save the measurement results, select "Export Results" — both at the bottom of the panel.
+10.	To rework the same landmarks later, select "Import" and choose the saved CSV file. "Delete All" clears every landmark for the current side.
 
 
 ## Installation instructions
