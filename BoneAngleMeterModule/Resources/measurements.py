@@ -1,10 +1,11 @@
 from Resources.measurement_logic import *
 
 MEASUREMENTS = [
-    TibiaTorsionMeasurement,
-    VarusValgusTibiaMeasurement,
-    TibiotalarRotationMeasurement,
-    FemorotibialRotationMeasurement,
+    AntetorsionMeasurement,
     VarusValgusFemurMeasurement,
-    AntetorsionMeasurement
+    VarusValgusTibiaMeasurement,
+    TibiaTorsionMeasurement,
+    FemorotibialRotationMeasurement,
+    TibiotalarRotationMeasurement,
+    TibialMetatarsalAngleMeasurement
 ]

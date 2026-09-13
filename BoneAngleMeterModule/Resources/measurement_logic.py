@@ -1,9 +1,16 @@
 import math
 import numpy as np
-from scipy.optimize import least_squares
-
 
 from Resources.helpers import *
+
+def sphere_landmark(point_dict, radius_dict, label):
+    '''
+    Returns (center, radius) for a manually-placed sphere landmark: the landmark's own placed
+    position as the center, and its user-adjusted radius. Used wherever visually matching a
+    sphere against the bone surface (femur head, femoral condyles) is more practical than an
+    automatic best-fit from several points.
+    '''
+    return point_dict[label], radius_dict[label]
 
 class BaseMeasurement:
     '''
@@ -11,11 +18,29 @@ class BaseMeasurement:
     dictionary of landmark positions and returns a float value and a string description. Calls to the
     measurement should be done via ().
     '''
+    # Names of any fitted spheres this measurement computes (e.g. "femur head"), for subclasses
+    # that fit one. Used by the GUI to know which spheres to show/hide, independent of whether
+    # a fit has actually been computed yet.
+    SPHERE_LABELS = []
+
+    # Descriptive labels of the two anatomical axes this measurement compares (e.g. "Tibial
+    # axis", "Talar axis"), in the same order they're compared. Used by the GUI to know which
+    # axis lines to show/hide, independent of whether they've actually been computed yet.
+    AXIS_LABELS = []
+
     def __init__(self, name):
         self.name = name
         self.side = None
         self.landmarks = []
         self.description = ""
+        self.spheres = {}  # label -> (center, radius), populated by _measure on success
+        self.axes = {}  # label -> (start_point, end_point), populated by _measure on success
+
+    def get_spheres(self):
+        return self.spheres
+
+    def get_axes(self):
+        return self.axes
 
     def set_side(self, side):
         self.side = side
@@ -31,8 +56,12 @@ class BaseMeasurement:
                 return np.random.rand(3)
 
         fake_dict = FakeDict()
-        self._measure(fake_dict)
-        used_landmark_names = fake_dict.queried_keys
+        self._measure(fake_dict, fake_dict)
+        # _measure legitimately reads some landmarks more than once (e.g. once to build a
+        # reference "normal" vector, again for the actual comparison vector), so dedupe while
+        # preserving first-seen order - otherwise a landmark referenced N times would be
+        # registered and listed N times.
+        used_landmark_names = list(dict.fromkeys(fake_dict.queried_keys))
 
         # Register landmark objects
         for name in used_landmark_names:
@@ -61,17 +90,24 @@ class BaseMeasurement:
             if not landmark.placed:
                 return False, None, "Not all landmarks defined"
         point_dict = {l.name: l.get_position() for l in self.landmarks}
-        angle, message = self._measure(point_dict)
+        radius_dict = {l.name: getattr(l, "radius", None) for l in self.landmarks}
+        angle, message = self._measure(point_dict, radius_dict)
         return True, angle, message
 
 class TibiaTorsionMeasurement(BaseMeasurement):
+    AXIS_LABELS = ["Distal cochlear axis", "Proximal tibial condylar axis"]
+
     def __init__(self):
         super().__init__('Tibia Torsion')
     
-    def _measure(self, point_dict):
+    def _measure(self, point_dict, radius_dict):
         normal = vector_with_two_points(point_dict["distal tibia midpoint"], point_dict["proximal tibia midpoint"])
         vector_distal = vector_with_two_points(point_dict["medial cochlea"], point_dict["lateral cochlea"])
         vector_proximal = vector_with_two_points(point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"])
+        self.axes = {
+            "Distal cochlear axis": (point_dict["medial cochlea"], point_dict["lateral cochlea"]),
+            "Proximal tibial condylar axis": (point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"]),
+        }
         
         vector_distal_proj = project_vector_to_plane_from_normal(normal, vector_distal)
         vector_proximal_proj = project_vector_to_plane_from_normal(normal, vector_proximal)
@@ -89,23 +125,29 @@ class TibiaTorsionMeasurement(BaseMeasurement):
             raise ValueError(f"Unknown side {self.side}")
 
 class VarusValgusTibiaMeasurement(BaseMeasurement):
+    AXIS_LABELS = ["Tibial shaft axis", "Proximal tibial condylar axis", "Cochlear articulation axis", "Condylar articulation axis"]
+
     def __init__(self):
         super().__init__('Varus Valgus Tibia')
         self.description = "TEST"
     
-    def _measure(self, point_dict):
+    def _measure(self, point_dict, radius_dict):
         normal = np.cross((vector_with_two_points(point_dict["distal tibia midpoint"], point_dict["proximal tibia midpoint"])),(vector_with_two_points(point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"])))
         vector_proximal_tibia_vv = vector_with_two_points(point_dict["lateral cochlea articulation point tibia"], point_dict["medial cochlea articulation point tibia"])
         vector_distal_tibia_vv = vector_with_two_points(point_dict["lateral condyle articulation point tibia"], point_dict["medial condyle articulation point tibia"])
+        self.axes = {
+            "Tibial shaft axis": (point_dict["distal tibia midpoint"], point_dict["proximal tibia midpoint"]),
+            "Proximal tibial condylar axis": (point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"]),
+            "Cochlear articulation axis": (point_dict["lateral cochlea articulation point tibia"], point_dict["medial cochlea articulation point tibia"]),
+            "Condylar articulation axis": (point_dict["lateral condyle articulation point tibia"], point_dict["medial condyle articulation point tibia"]),
+        }
 
-        normal_component = np.dot(normal, vector_distal_tibia_vv)/(np.linalg.norm(normal)**2) * normal
-        vector_proximal_tibia_vv_proj = project_vector_to_plane_from_normal(normal, vector_proximal_tibia_vv)
-        vector_distal_tibia_vv_proj = project_vector_to_plane_from_normal(normal, vector_distal_tibia_vv)
+        # This is a bending angle (not a rotation/torsion), so - same reasoning as the femur
+        # varus/valgus fix - the raw 3D angle is used directly rather than first projecting onto
+        # a plane. normal is still used below for the side-direction check.
+        a = angle(vector_proximal_tibia_vv, vector_distal_tibia_vv)*180/math.pi
         
-
-        a = angle(vector_proximal_tibia_vv_proj, vector_distal_tibia_vv_proj)*180/math.pi
-        
-        t = np.cross(vector_proximal_tibia_vv_proj, vector_distal_tibia_vv_proj)
+        t = np.cross(vector_proximal_tibia_vv, vector_distal_tibia_vv)
         q = np.dot(t,normal)
         if self.side.lower() == "right":
             return a, "Varus" if q > 0 else "Valgus"
@@ -115,13 +157,19 @@ class VarusValgusTibiaMeasurement(BaseMeasurement):
             raise ValueError(f"Unknown side {self.side}")
 
 class TibiotalarRotationMeasurement(BaseMeasurement):
+    AXIS_LABELS = ["Distal tibial axis", "Talar axis"]
+
     def __init__(self):
         super().__init__("Tibiotalar Rotation")
     
-    def _measure(self, point_dict):
+    def _measure(self, point_dict, radius_dict):
         normal = vector_with_two_points(point_dict["distal tibia midpoint"], point_dict["proximal tibia midpoint"])
         vector_distaltibia = vector_with_two_points(point_dict["medial cochlea"], point_dict["lateral cochlea"])
         vector_talus = vector_with_two_points(point_dict["medial talus"], point_dict["lateral talus"])
+        self.axes = {
+            "Distal tibial axis": (point_dict["medial cochlea"], point_dict["lateral cochlea"]),
+            "Talar axis": (point_dict["medial talus"], point_dict["lateral talus"]),
+        }
         
         vector_distaltibia_proj = project_vector_to_plane_from_normal(normal, vector_distaltibia)
         vector_talus_proj = project_vector_to_plane_from_normal(normal, vector_talus)
@@ -140,13 +188,26 @@ class TibiotalarRotationMeasurement(BaseMeasurement):
             raise ValueError(f"Unknown side {self.side}")
 
 class FemorotibialRotationMeasurement(BaseMeasurement):
+    SPHERE_LABELS = ["medial femur condyle", "lateral femur condyle"]
+    AXIS_LABELS = ["Femoral condylar axis", "Proximal tibial axis"]
+
     def __init__(self):
         super().__init__("Femorotibial Rotation")
 
-    def _measure(self, point_dict):
+    def _measure(self, point_dict, radius_dict):
         normal = vector_with_two_points(point_dict["distal tibia midpoint"], point_dict["proximal tibia midpoint"])
 
-        vector_distal_femur = vector_with_two_points(point_dict["medial femur condyle"], point_dict["lateral femur condyle"])
+        medial_condyle, medial_radius = sphere_landmark(point_dict, radius_dict, "medial femur condyle")
+        lateral_condyle, lateral_radius = sphere_landmark(point_dict, radius_dict, "lateral femur condyle")
+        self.spheres = {
+            "medial femur condyle": (medial_condyle, medial_radius),
+            "lateral femur condyle": (lateral_condyle, lateral_radius),
+        }
+        self.axes = {
+            "Femoral condylar axis": (medial_condyle, lateral_condyle),
+            "Proximal tibial axis": (point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"]),
+        }
+        vector_distal_femur = vector_with_two_points(medial_condyle, lateral_condyle)
         vector_prox_tibia = vector_with_two_points(point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"])
         
         vector_distal_femur_proj = project_vector_to_plane_from_normal(normal, vector_distal_femur)
@@ -165,69 +226,69 @@ class FemorotibialRotationMeasurement(BaseMeasurement):
             raise ValueError(f"Unknown side {self.side}")
 
 class VarusValgusFemurMeasurement(BaseMeasurement):
-    def __init__(self):
-        super().__init__("Varus Valgus Femur")
+    SPHERE_LABELS = ["medial femur condyle", "lateral femur condyle"]
+    AXIS_LABELS = ["Femoral shaft axis", "Femoral condylar axis"]
 
-    def _measure(self, point_dict):
-        normal = np.cross((vector_with_two_points(point_dict["proximal femur midpoint"], point_dict["distal femur midpoint"])), (vector_with_two_points(point_dict["medial femur condyle"], point_dict["lateral femur condyle"])))
-        vector_axis_femur_vv = vector_with_two_points(point_dict["distal femur midpoint"], point_dict["proximal femur midpoint"])
-        vector_dist_femur_vv =  vector_with_two_points(point_dict["medial femur condyle"], point_dict["lateral femur condyle"])
-        
-        vector_axis_femur_vv_proj = project_vector_to_plane_from_normal(normal, vector_axis_femur_vv)
-        vector_dist_femur_vv_proj = project_vector_to_plane_from_normal(normal, vector_dist_femur_vv)
-        
-        a = angle(vector_axis_femur_vv_proj, vector_dist_femur_vv_proj)*180/math.pi -90
-        
-        t = np.cross(vector_axis_femur_vv_proj, vector_dist_femur_vv_proj)
-        q = np.dot(t,normal)
-        if self.side.lower() == "right":
-            return a, "Varus" if q > 0 else "Valgus"
-        elif self.side.lower() == "left":
-            return a, "Valgus" if q > 0 else "Varus"
-        else:
-            raise ValueError(f"Unknown side {self.side}")
+    def __init__(self):
+        super().__init__("aLDFA (Varus/Valgus Femur)")
+
+    def _measure(self, point_dict, radius_dict):
+        medial_condyle, medial_radius = sphere_landmark(point_dict, radius_dict, "medial femur condyle")
+        lateral_condyle, lateral_radius = sphere_landmark(point_dict, radius_dict, "lateral femur condyle")
+        self.spheres = {
+            "medial femur condyle": (medial_condyle, medial_radius),
+            "lateral femur condyle": (lateral_condyle, lateral_radius),
+        }
+        self.axes = {
+            "Femoral shaft axis": (point_dict["Femur midpoint 50%"], point_dict["Femur midpoint 30%"]),
+            "Femoral condylar axis": (medial_condyle, lateral_condyle),
+        }
+
+        # aLDFA is traditionally read on an AP (anteroposterior) radiograph, which is why this
+        # used to project both axes onto a coronal plane assumed from a fixed anteroposterior
+        # direction in the scanner's frame. That assumption doesn't hold for every scan - a
+        # limb tilted well out of that assumed plane produces a materially distorted angle. Since
+        # this is a full 3D CT-derived measurement rather than a 2D radiograph, the raw 3D angle
+        # between the two axes is used directly instead - it needs no assumption about how the
+        # limb was positioned in the scanner.
+        # The shaft vector points proximally (50% -> 30%): verified against a deliberately
+        # constructed severe-varus test case (moving the proximal landmark medially). Flipping it
+        # gives the supplementary angle (180 - angle), which read Valgus for that known-varus
+        # case - the earlier "point distally" convention was calibrated against the now-removed
+        # plane projection and doesn't carry over to the raw 3D angle.
+        vector_axis_femur_vv = vector_with_two_points(point_dict["Femur midpoint 50%"], point_dict["Femur midpoint 30%"])
+        vector_dist_femur_vv = vector_with_two_points(medial_condyle, lateral_condyle)
+
+        # aLDFA: the femoral (anatomical) axis stands at 90 deg on the condylar axis. Varus
+        # increases this lateral angle above 90 deg, valgus decreases it below 90 deg - this is a
+        # magnitude comparison, not a handedness/chirality question, so it needs no side-dependent
+        # sign logic (unlike the rotation measurements elsewhere in this module).
+        aldfa = angle(vector_axis_femur_vv, vector_dist_femur_vv)*180/math.pi
+        is_varus = aldfa > 90
+        return aldfa, "aLDFA - Varus" if is_varus else "aLDFA - Valgus"
 
 class AntetorsionMeasurement(BaseMeasurement):
+    SPHERE_LABELS = ["femur head", "medial femur condyle", "lateral femur condyle"]
+    AXIS_LABELS = ["Femoral condylar axis", "Femoral neck axis"]
+
     def __init__(self):
         super().__init__("Antetorsion")
 
-    def center_of_femur_head(self, point_dict):   
-        def fit_sphere_least_squares(x_values, y_values, z_values, initial_parameters, bounds=((-np.inf, -np.inf, -np.inf, -np.inf),(np.inf, np.inf, np.inf, np.inf))):
-            return least_squares(_calculate_residual_sphere, initial_parameters, bounds=bounds, method="trf", jac="3-point", args=(x_values, y_values, z_values))
-
-        def _calculate_residual_sphere(parameters, x_values, y_values, z_values):
-            """
-            Source: https://github.com/thompson318/scikit-surgery-sphere-fitting/blob/master/sksurgeryspherefitting/algorithms/sphere_fitting.py
-            Calculates the residual error for an x,y,z coordinates, fitted
-            to a sphere with centre and radius defined by the parameters tuple
-            :return: The residual error
-            :param: A tuple of the parameters to be optimised, should contain [x_centre, y_centre, z_centre, radius]
-            :param: arrays containing the x,y, and z coordinates."""
-
-            #extract the parameters
-            x_centre, y_centre, z_centre, radius = parameters
-            #use numpy's sqrt function here, which works by element on arrays
-            distance_from_centre = np.sqrt((x_values - x_centre)**2 + (y_values - y_centre)**2 + (z_values - z_centre)**2)
-            return distance_from_centre - radius
-
-        # Fit a sphere to the markups fidicual points
-        markups= [point_dict["point on femur head 1"], point_dict["point on femur head 2"], point_dict["point on femur head 3"], point_dict["point on femur head 4"], point_dict["point on femur head 5"]]
-        markupsPositions = np.array(markups)
-        # initial guess
-
-        center0 = np.mean(markupsPositions, 0)
-        radius0 = np.linalg.norm(np.amin(markupsPositions,0)-np.amax(markupsPositions,0))/2.0
-        fittingResult = fit_sphere_least_squares(markupsPositions[:,0], markupsPositions[:,1], markupsPositions[:,2], [center0[0], center0[1], center0[2], radius0])
-        [centerX, centerY, centerZ, radius] = fittingResult["x"]
-        center0 = [centerX, centerY, centerZ]
-        return center0
-
-
-    
-    def _measure(self, point_dict):
-        center = self.center_of_femur_head(point_dict)
-        normal = vector_with_two_points(point_dict["distal femur midpoint"], point_dict["proximal femur midpoint"])
-        vector_distal_femur = vector_with_two_points(point_dict["medial femur condyle"], point_dict["lateral femur condyle"])
+    def _measure(self, point_dict, radius_dict):
+        center, head_radius = sphere_landmark(point_dict, radius_dict, "femur head")
+        medial_condyle, medial_radius = sphere_landmark(point_dict, radius_dict, "medial femur condyle")
+        lateral_condyle, lateral_radius = sphere_landmark(point_dict, radius_dict, "lateral femur condyle")
+        self.spheres = {
+            "femur head": (center, head_radius),
+            "medial femur condyle": (medial_condyle, medial_radius),
+            "lateral femur condyle": (lateral_condyle, lateral_radius),
+        }
+        self.axes = {
+            "Femoral condylar axis": (medial_condyle, lateral_condyle),
+            "Femoral neck axis": (center, point_dict["femur neck"]),
+        }
+        normal = vector_with_two_points(point_dict["Femur midpoint 50%"], point_dict["Femur midpoint 30%"])
+        vector_distal_femur = vector_with_two_points(medial_condyle, lateral_condyle)
         vector_femur_neck = vector_with_two_points(center, point_dict["femur neck"])
         
         vector_distal_femur_proj = project_vector_to_plane_from_normal(normal, vector_distal_femur)
@@ -246,6 +307,44 @@ class AntetorsionMeasurement(BaseMeasurement):
             raise ValueError(f"Unknown side {self.side}")
         
 
+class TibialMetatarsalAngleMeasurement(BaseMeasurement):
+    '''
+    Angle between the tibial condylar axis (proximal reference) and the talus-metatarsal axis
+    (distal reference), both projected onto the plane perpendicular to the tibial long axis. In
+    a normal limb the foot sits roughly in that same plane as the condylar axis, so this isolates
+    rotational deviation of the foot relative to the knee - robust to how much the foot happens
+    to be flexed/extended, since flexion/extension mostly changes the metatarsal vector's
+    component along the tibial axis, which the projection removes. Same pattern as Tibia
+    Torsion/Tibiotalar Rotation, which are also projected onto this same tibial-axis plane.
+    '''
+    AXIS_LABELS = ["Tibial long axis", "Tibial condylar axis", "Talus-metatarsal axis"]
+
+    def __init__(self):
+        super().__init__("Tibial Metatarsal Angle")
+
+    def _measure(self, point_dict, radius_dict):
+        normal = vector_with_two_points(point_dict["distal tibia midpoint"], point_dict["proximal tibia midpoint"])
+        vector_proximal = vector_with_two_points(point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"])
+        vector_distal = vector_with_two_points(point_dict["Talus centre"], point_dict["Metatarsal centre"])
+        self.axes = {
+            "Tibial long axis": (point_dict["distal tibia midpoint"], point_dict["proximal tibia midpoint"]),
+            "Tibial condylar axis": (point_dict["condylus medialis tibiae"], point_dict["condylus lateralis tibiae"]),
+            "Talus-metatarsal axis": (point_dict["Talus centre"], point_dict["Metatarsal centre"]),
+        }
+
+        vector_proximal_proj = project_vector_to_plane_from_normal(normal, vector_proximal)
+        vector_distal_proj = project_vector_to_plane_from_normal(normal, vector_distal)
+        tma = angle(vector_proximal_proj, vector_distal_proj) * 180 / math.pi
+        # Below 90 deg: the metatarsal axis has rotated toward the condylar axis's own lateral
+        # direction (outward). Above 90 deg: rotated the other way (inward). Verified via
+        # controlled rotation-based synthetic geometry - needs no side-dependent sign logic,
+        # since "medial -> lateral" is already a correctly side-oriented vector by construction,
+        # same reasoning as the aLDFA magnitude-only comparison.
+        is_outward = tma < 90
+        deviation = abs(tma - 90)
+        return deviation, "Outward rotation" if is_outward else "Inward rotation"
+
+
 class ExampleMeasurement(BaseMeasurement):
     '''
     This class SHOULD NOT BE USED, it is just provided as a example that shows how
@@ -254,7 +353,7 @@ class ExampleMeasurement(BaseMeasurement):
     def __init__(self, display_name):
         super().__init__(display_name)
     
-    def _measure(self, point_dict):
+    def _measure(self, point_dict, radius_dict):
         p = point_dict['landmark name'] # access landmarks
         m = 42 # calculate float measurement
         
