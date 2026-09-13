@@ -1,5 +1,9 @@
 # BoneAngleMeter
-
+> **Note:** This is a modified fork of the original BoneAngleMeter project, with
+> additional measurements, bug fixes, and interface changes. See
+> [CHANGELOG.md](CHANGELOG.md) for full details. The original description and
+> credit below remain accurate for the base project.
+> 
 This repository contains the code developed during Juliette Burg Personnaz' dissertation at *CTK, LMU Munich*. 
 This 3D-Slicer plugin can be used to measure bone-angles in CT-images. The currently supported measurements are only valid for the canine hind-limbs. 
 
